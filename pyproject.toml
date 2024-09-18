@@ -11,7 +11,7 @@ pyapacheatlas = "^0.16.0"
 snowflake-connector-python = {extras = ["pandas"], version = "^3.12.0"}
 pandas = "^2.2.2"
 pydantic-settings = "^2.4.0"
-
+pandera = "^0.20.4"
 
 [build-system]
 requires = ["poetry-core"]
