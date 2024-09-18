@@ -1,7 +1,7 @@
 [tool.poetry]
 name = "etl-snowflake-lineage-purview"
 version = "0.1.0"
-description = "Synchronisation du lineage Snowflake interne avec Purview via l'API Apache Atlas Publique"
+description = "Extract Snowflake dependencies via a Snowflake view, transform view lines to Apache Atlas Objects Process and load Atlas Process to Purview Atlas API via bulk create request."
 authors = ["Mathis Fasolo <mathis.fasolo@soyhuce.fr>"]
 readme = "README.md"
 
