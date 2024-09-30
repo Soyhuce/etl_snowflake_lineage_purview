@@ -74,7 +74,6 @@ sequenceDiagram
 | *_DATABASE            | qualified_name        |
 | *_SCHEMA              | qualified_name        |
 | *_OBJECT_NAME         | name & qualified_name |
-| *_OBJECT_ID           | - guid                |
 | *_OBJECT_DOMAIN       | typeName              |
 | DEPENDENCY_TYPE       | NOT_USED              |
 | STAGE_URL             | qualified_name        |

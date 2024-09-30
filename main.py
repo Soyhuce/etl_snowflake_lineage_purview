@@ -123,8 +123,6 @@ def transform_snowflake_dependancies_to_atlas_entity(purview_client: PurviewClie
             logging.info(f"Entity with qualified name {referenced_entity.qualifiedName} already exists in Purview")
             continue
         
-        # get_atlas_entity_id(purview_client, referenced_entity)
-        
         referencing_entity = (
             ObjectDependency(
                 database=line["REFERENCING_DATABASE"],
