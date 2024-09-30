@@ -61,10 +61,10 @@ def extract_object_dependancies_from_snowflake(snowflake_connection: SnowflakeCo
         cursor = snowflake_connection.cursor()
         objects_dependencies = (
             cursor
-            .execute("SELECT * FROM AUDIT.AUDIT_LINEAGE.PURVIEW_LINEAGE_OBJECT_DEPENDENCIES")
+            .execute('select * from "PRD_RAW"."PURVIEW"."BLOB_AND_TABLE_MAPPING_VW" where referencing_object_name LIKE \'REFERENTIAL_VIDEO\';')
             .fetch_pandas_all()
         )
-        objects_dependencies["_snowflake_host"] = snowflake_connection.host
+        objects_dependencies["snowflake_host"] = snowflake_connection.host
         snowflake_objects_dependencies = SnowflakeObjectsDependencies.validate(objects_dependencies)
     except pa.errors.SchemaError as schema_err:
         message = (
@@ -109,12 +109,11 @@ def transform_snowflake_dependancies_to_atlas_entity(purview_client: PurviewClie
     for _, line in object_deps.iterrows():
         referenced_entity = (
             ObjectDependency(
-                id=line["REFERENCED_OBJECT_ID"],
                 database=line["REFERENCED_DATABASE"],
                 schema=line["REFERENCED_SCHEMA"],
                 name=line["REFERENCED_OBJECT_NAME"],
                 type=line["REFERENCED_OBJECT_DOMAIN"],
-                snowflake_server=line["_snowflake_host"]
+                snowflake_server=line["snowflake_host"]
             )
             .to_atlas_entity()
         )
@@ -124,14 +123,15 @@ def transform_snowflake_dependancies_to_atlas_entity(purview_client: PurviewClie
             logging.info(f"Entity with qualified name {referenced_entity.qualifiedName} already exists in Purview")
             continue
         
+        # get_atlas_entity_id(purview_client, referenced_entity)
+        
         referencing_entity = (
             ObjectDependency(
-                id=line["REFERENCING_OBJECT_ID"],
                 database=line["REFERENCING_DATABASE"],
                 schema=line["REFERENCING_SCHEMA"],
                 name=line["REFERENCING_OBJECT_NAME"],
                 type=line["REFERENCING_OBJECT_DOMAIN"],
-                snowflake_server=line["_snowflake_host"]
+                snowflake_server=line["snowflake_host"]
             )
             .to_atlas_entity()
         )
@@ -141,8 +141,8 @@ def transform_snowflake_dependancies_to_atlas_entity(purview_client: PurviewClie
             logging.info(f"Entity with qualified name {referencing_entity.qualifiedName} already exists in Purview")
             continue
 
-        lineage_process_name = f"Snowflake custom ingestion from {referenced_entity} to {referencing_entity}"
-        lineage_process_qual_name = f"snowflake_query_from_{referenced_entity}_to_{referencing_entity}"
+        lineage_process_name = f"Snowflake custom ingestion from {referenced_entity.qualifiedName} to {referencing_entity.qualifiedName}"
+        lineage_process_qual_name = f"snowflake_query_from_{referenced_entity.qualifiedName}_to_{referencing_entity.qualifiedName}"
         lineage_process = (
             AtlasProcess(
                 name=lineage_process_name,
@@ -150,7 +150,7 @@ def transform_snowflake_dependancies_to_atlas_entity(purview_client: PurviewClie
                 qualified_name=lineage_process_qual_name,
                 inputs=[referenced_entity],
                 outputs=[referencing_entity],
-                guid=f"-{uuid.uuid4()}"
+                guid=f"-{str(uuid.uuid4())}"
             )
         )
         

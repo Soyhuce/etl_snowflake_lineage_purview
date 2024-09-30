@@ -1,5 +1,6 @@
 import pandera as pa
 
+from typing import Optional
 from datetime import datetime
 from dataclasses import dataclass
 
@@ -7,23 +8,21 @@ from pyapacheatlas.core import AtlasEntity
 
 
 class SnowflakeObjectsDependencies(pa.DataFrameModel):
-    referenced_database: str
-    referenced_schema: str
-    referenced_object_name: str
-    referenced_object_id: str
-    referenced_object_domain: str
-    referencing_database: str
-    referencing_schema: str
-    referencing_object_name: str
-    referencing_object_id: str
-    referencing_object_domain: str
-    dependency_type: str
-    _snowflake_host: str
+    referenced_database: str = pa.Field(alias="REFERENCED_DATABASE", nullable=True)
+    referenced_schema: str = pa.Field(alias="REFERENCED_SCHEMA", nullable=True)
+    referenced_object_name: str = pa.Field(alias="REFERENCED_OBJECT_NAME", nullable=False)
+    referenced_object_domain: str = pa.Field(alias="REFERENCED_OBJECT_DOMAIN", nullable=False)
+    referencing_database: str = pa.Field(alias="REFERENCING_DATABASE", nullable=False)
+    referencing_schema: str = pa.Field(alias="REFERENCING_SCHEMA", nullable=False)
+    referencing_object_name: str = pa.Field(alias="REFERENCING_OBJECT_NAME", nullable=False)
+    referencing_object_domain: str = pa.Field(alias="REFERENCING_OBJECT_DOMAIN", nullable=False)
+    dependency_type: str = pa.Field(alias="DEPENDENCY_TYPE", nullable=False)
+    stage_url: Optional[str] = pa.Field(alias="STAGE_URL", nullable=True)
+    snowflake_host: str 
 
 
 @dataclass
 class ObjectDependency:
-    id: str
     database: str
     schema: str
     name: str
@@ -32,15 +31,17 @@ class ObjectDependency:
     
     @property
     def qualified_name(self) -> str:
-        return f"snowflake://{self.snowflake_server}/databases/{self.database}/schemas/{self.schema}/table/{self.name}"
+        object_name = f"@{self.name}" if self.type == "STAGE" else self.name
+        type_separator_name = f"{self.type.lower()}s"
+        return f"snowflake://{self.snowflake_server}/databases/{self.database}/schemas/{self.schema}/{type_separator_name}/{object_name}"
+            
     
     def __str__(self) -> str:
         return f"{self.database}.{self.schema}.{self.name}".lower()
     
     def to_atlas_entity(self) -> AtlasEntity:
-        guid = f"-{self.id}"
         return AtlasEntity(
-            guid=guid,
+            guid=None,
             name=self.name,
             typeName=f"snowflake_{self.type}".lower().replace(' ', '_').replace("materialized_", ""),
             qualified_name=self.qualified_name,

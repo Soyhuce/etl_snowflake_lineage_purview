@@ -8,7 +8,7 @@ Extract Snowflake dependencies via a Snowflake view, transform view lines to Apa
 
 ### Prerequisites
 
-- Snowflake view `AUDIT.AUDIT_LINEAGE.PURVIEW_LINEAGE_OBJECT_DEPENDENCIES` must be created in Snowflake account and read access right to the view must be granted to snowflake used user.
+- Snowflake view `PRD_RAW.PURVIEW.BLOB_AND_TABLE_MAPPING_VW` must be created in Snowflake account and read access right to the view must be granted to snowflake used user.
 - Azure Active Directory Entreprise Application must exists in Azure AD (identified by client_id and client_secret) and correct access write to data domain must be granted in Purview console.
 
 ### Expected environment variables
@@ -32,7 +32,9 @@ These varenv are extracted and validated by *pydantic-settings*
 1. Install dependancies via `poetry install`
 2. Run script via poetry `poetry run python main.py`
 
-## ETL Process
+## ETL
+
+### ETL Process
 
 ```mermaid
 sequenceDiagram
@@ -52,6 +54,27 @@ sequenceDiagram
         snowflake -->> etl: object dependencies rows
         etl ->> snowflake: close connection
     deactivate snowflake
-    etl ->> etl: validate result and transform rows as Atlas Process 
-    etl ->> pur: send atlas processes via bulk create
+    etl ->> etl: validate result and transform rows as Atlas Entity 
+    loop for each snowflake dependencies
+        etl ->> pur: check if Atlas Entities source and target exist via qualifiedName
+        pur -->> etl: entity found or not found
+        alt entities exists
+            etl ->> etl: create Atlas Process
+        else one or both entities does not exits
+            etl ->> etl: pass without create Atlas Process
+        end
+    end
+    etl ->> pur: send created atlas processes via bulk create
 ```
+
+### Mapping Snowflake --> Apache Atlas
+
+| Snowflake view column | Apache Atlas Json key |
+| --------------------- | --------------------- |
+| *_DATABASE            | qualified_name        |
+| *_SCHEMA              | qualified_name        |
+| *_OBJECT_NAME         | name & qualified_name |
+| *_OBJECT_ID           | - guid                |
+| *_OBJECT_DOMAIN       | typeName              |
+| DEPENDENCY_TYPE       | NOT_USED              |
+| STAGE_URL             | qualified_name        |
