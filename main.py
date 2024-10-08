@@ -61,7 +61,11 @@ def extract_object_dependancies_from_snowflake(snowflake_connection: SnowflakeCo
         cursor = snowflake_connection.cursor()
         objects_dependencies = (
             cursor
-            .execute('select * from "PRD_RAW"."PURVIEW"."BLOB_AND_TABLE_MAPPING_VW" where referencing_object_name LIKE \'REFERENTIAL_VIDEO\';')
+            .execute("""
+select * 
+from "PRD_RAW"."PURVIEW"."BLOB_AND_TABLE_MAPPING_VW"
+where (referencing_object_name LIKE 'REFERENTIAL_VIDEO' OR referenced_object_name LIKE 'REFERENTIAL_VIDEO') AND REFERENCED_OBJECT_DOMAIN != 'STAGE';
+""")
             .fetch_pandas_all()
         )
         objects_dependencies["snowflake_host"] = snowflake_connection.host
@@ -81,7 +85,7 @@ def extract_object_dependancies_from_snowflake(snowflake_connection: SnowflakeCo
         snowflake_connection.close()
 
 
-def entity_exists(purview_client: PurviewClient, entity_qualified_name: str, entity_type: str) -> bool:
+def entity_exists(purview_client: PurviewClient, entity: ObjectDependency | AtlasProcess) -> bool:
     """Check if entity already ingested in Purview via Purview scans
 
     Args:
@@ -92,7 +96,13 @@ def entity_exists(purview_client: PurviewClient, entity_qualified_name: str, ent
     Returns:
         bool: if entity exists in Purview
     """
-    return len(purview_client.get_entity(qualifiedName=entity_qualified_name, typeName=entity_type)) > 0
+    match(entity):
+        case ObjectDependency():
+            return len(purview_client.get_entity(qualifiedName=entity.qualified_name, typeName=entity.type_name)) > 0
+        case AtlasProcess():
+            return len(purview_client.get_entity(qualifiedName=entity.qualifiedName, typeName=entity.typeName)) > 0
+        case _:
+            raise ValueError(f"Entity of type {type(entity)} not applicable to purview type entity check")
 
 
 def transform_snowflake_dependancies_to_atlas_entity(purview_client: PurviewClient, object_deps: DataFrame[SnowflakeObjectsDependencies]) -> Iterator[AtlasProcess]:
@@ -112,15 +122,14 @@ def transform_snowflake_dependancies_to_atlas_entity(purview_client: PurviewClie
                 database=line["REFERENCED_DATABASE"],
                 schema=line["REFERENCED_SCHEMA"],
                 name=line["REFERENCED_OBJECT_NAME"],
-                type=line["REFERENCED_OBJECT_DOMAIN"],
+                snowflake_type=line["REFERENCED_OBJECT_DOMAIN"],
                 snowflake_server=line["snowflake_host"]
             )
-            .to_atlas_entity()
         )
         # If referenced entity does not exists in Purview (has not already been scanned by Purview)
         # don t create process
-        if not entity_exists(purview_client, referenced_entity.qualifiedName, referenced_entity.typeName):
-            logging.info(f"Entity with qualified name {referenced_entity.qualifiedName} already exists in Purview")
+        if not entity_exists(purview_client, referenced_entity):
+            logging.info(f"Entity with qualified name {referenced_entity.qualified_name} already exists in Purview")
             continue
         
         referencing_entity = (
@@ -128,31 +137,30 @@ def transform_snowflake_dependancies_to_atlas_entity(purview_client: PurviewClie
                 database=line["REFERENCING_DATABASE"],
                 schema=line["REFERENCING_SCHEMA"],
                 name=line["REFERENCING_OBJECT_NAME"],
-                type=line["REFERENCING_OBJECT_DOMAIN"],
+                snowflake_type=line["REFERENCING_OBJECT_DOMAIN"],
                 snowflake_server=line["snowflake_host"]
             )
-            .to_atlas_entity()
         )
         # If referencing entity does not exists in Purview (has not already been scanned by Purview)
         # don t create process
-        if not entity_exists(purview_client, referencing_entity.qualifiedName, referencing_entity.typeName):
-            logging.info(f"Entity with qualified name {referencing_entity.qualifiedName} already exists in Purview")
+        if not entity_exists(purview_client, referencing_entity):
+            logging.info(f"Entity with qualified name {referencing_entity.qualified_name} already exists in Purview")
             continue
 
-        lineage_process_name = f"Snowflake custom ingestion from {referenced_entity.qualifiedName} to {referencing_entity.qualifiedName}"
-        lineage_process_qual_name = f"snowflake_query_from_{referenced_entity.qualifiedName}_to_{referencing_entity.qualifiedName}"
+        lineage_process_name = f"Snowflake custom ingestion from {referenced_entity} to {referencing_entity}"
+        lineage_process_qual_name = f"snowflake_query_from_{referenced_entity.qualified_name}_to_{referencing_entity.qualified_name}"
         lineage_process = (
             AtlasProcess(
                 name=lineage_process_name,
                 typeName="Process",
                 qualified_name=lineage_process_qual_name,
-                inputs=[referenced_entity],
-                outputs=[referencing_entity],
+                inputs=[referenced_entity.to_atlas_entity()],
+                outputs=[referencing_entity.to_atlas_entity()],
                 guid=f"-{str(uuid.uuid4())}"
             )
         )
         
-        if not entity_exists(purview_client, lineage_process.qualifiedName, lineage_process.typeName):
+        if not entity_exists(purview_client, lineage_process):
             logging.info(f"Process with qualified name {lineage_process.qualifiedName} dont' exist in Purview")
             yield lineage_process
 
