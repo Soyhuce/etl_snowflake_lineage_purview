@@ -8,7 +8,7 @@ from typing import Iterator
 
 from pandera.typing import DataFrame
 from snowflake.connector.connection import SnowflakeConnection
-from pyapacheatlas.core import PurviewClient, AtlasProcess
+from pyapacheatlas.core import PurviewClient, AtlasProcess, EntityTypeDef
 from pyapacheatlas.auth import ServicePrincipalAuthentication
 
 from models.exceptions import SnowflakeLineageQueryExeption
@@ -64,7 +64,7 @@ def extract_object_dependancies_from_snowflake(snowflake_connection: SnowflakeCo
             .execute("""
 select * 
 from "PRD_RAW"."PURVIEW"."BLOB_AND_TABLE_MAPPING_VW"
-where (referencing_object_name LIKE 'REFERENTIAL_VIDEO' OR referenced_object_name LIKE 'REFERENTIAL_VIDEO') AND REFERENCED_OBJECT_DOMAIN != 'STAGE';
+where (referencing_object_name LIKE 'REFERENTIAL_VIDEO' OR referenced_object_name LIKE 'REFERENTIAL_VIDEO');
 """)
             .fetch_pandas_all()
         )
@@ -149,10 +149,11 @@ def transform_snowflake_dependancies_to_atlas_entity(purview_client: PurviewClie
 
         lineage_process_name = f"Snowflake custom ingestion from {referenced_entity} to {referencing_entity}"
         lineage_process_qual_name = f"snowflake_query_from_{referenced_entity.qualified_name}_to_{referencing_entity.qualified_name}"
+        process_type = "SnowflakeStageLoadProcess" if (referenced_entity.snowflake_type == "STAGE") or (referencing_entity.snowflake_type == "STAGE") else "Process"
         lineage_process = (
             AtlasProcess(
                 name=lineage_process_name,
-                typeName="Process",
+                typeName=process_type,
                 qualified_name=lineage_process_qual_name,
                 inputs=[referenced_entity.to_atlas_entity()],
                 outputs=[referencing_entity.to_atlas_entity()],
@@ -181,6 +182,21 @@ def load_atlas_objects_to_purview(purview_client: PurviewClient, purview_objects
         logging.info(f"Sucessfully sent {len(purview_objects)} Atlas Process to Purview")
 
 
+def upload_missing_type_purview(purview_client: PurviewClient) -> None:
+    try:
+        procType = EntityTypeDef(
+            "SnowflakeStageLoadProcess",
+            superTypes=["DataSet","Process"],
+        )
+    
+        purview_client.upload_typedefs(entityDefs=[procType], force_update=True)
+    except Exception:
+        raise
+    else:
+        logging.info("New Purview type SnowflakeStageLoadProcess created")
+
+
+
 def etl() -> None:
     """
     etl main process
@@ -188,9 +204,11 @@ def etl() -> None:
     purview_settings = get_purview_settings()
     snowflake_settings = get_snowflake_settings()    
     purview_client = create_purview_client(purview_settings)
+    upload_missing_type_purview(purview_client)
     snowflake_connection = create_snowflake_connection(snowflake_settings)
     rows = extract_object_dependancies_from_snowflake(snowflake_connection)
     entities = list(transform_snowflake_dependancies_to_atlas_entity(purview_client, rows))
+
     load_atlas_objects_to_purview(purview_client, entities)
 
 
