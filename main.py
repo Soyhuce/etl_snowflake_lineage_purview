@@ -183,6 +183,13 @@ def load_atlas_objects_to_purview(purview_client: PurviewClient, purview_objects
 
 
 def upload_missing_type_purview(purview_client: PurviewClient) -> None:
+    """Adding missing Atlas Entity to allow SnowflakeStage to be linked to SnowflakeTable
+    The new Atlas Entity "SnowflakeStageLoadProcess" has Process and DataSet super type.
+    Upload new entity to Purview via upload http request.
+    
+    Args:
+        purview_client (PurviewClient): Purview client to perform upload request
+    """
     try:
         procType = EntityTypeDef(
             "SnowflakeStageLoadProcess",
