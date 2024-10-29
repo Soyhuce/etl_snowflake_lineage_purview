@@ -115,6 +115,7 @@ def transform_snowflake_dependancies_to_atlas_entity(purview_client: PurviewClie
     Yields:
         Iterator[AtlasProcess]: Iterator of AtlasProcess objects
     """
+    logger = logging.getLogger("etl_lineage_snowflake_purview")
     # Iterate over Snowflake view objects dependecies
     for _, line in object_deps.iterrows():
         referenced_entity = (
@@ -128,8 +129,9 @@ def transform_snowflake_dependancies_to_atlas_entity(purview_client: PurviewClie
         )
         # If referenced entity does not exists in Purview (has not already been scanned by Purview)
         # don t create process
+        logger.debug(f"Source entity queried from Snowflake: {referenced_entity}")
         if not entity_exists(purview_client, referenced_entity):
-            logging.info(f"Entity with qualified name {referenced_entity.qualified_name} already exists in Purview")
+            logger.info(f"Entity with qualified name {referenced_entity.qualified_name} already exists in Purview")
             continue
         
         referencing_entity = (
@@ -143,8 +145,9 @@ def transform_snowflake_dependancies_to_atlas_entity(purview_client: PurviewClie
         )
         # If referencing entity does not exists in Purview (has not already been scanned by Purview)
         # don t create process
+        logger.debug(f"Target entity queried from Snowflake: {referencing_entity}")
         if not entity_exists(purview_client, referencing_entity):
-            logging.info(f"Entity with qualified name {referencing_entity.qualified_name} already exists in Purview")
+            logger.info(f"Entity with qualified name {referencing_entity.qualified_name} already exists in Purview")
             continue
 
         lineage_process_name = f"Snowflake custom ingestion from {referenced_entity} to {referencing_entity}"
@@ -160,10 +163,12 @@ def transform_snowflake_dependancies_to_atlas_entity(purview_client: PurviewClie
                 guid=f"-{str(uuid.uuid4())}"
             )
         )
-        
+        logger.debug(f"Generated lineage entity from source and target: {lineage_process}")
         if not entity_exists(purview_client, lineage_process):
-            logging.info(f"Process with qualified name {lineage_process.qualifiedName} dont' exist in Purview")
+            logger.info(f"Process with qualified name {lineage_process.qualifiedName} dont' exist in Purview")
             yield lineage_process
+        else:
+            logger.info(f"Process with qualified name {lineage_process.qualifiedName} already exists in Purview")
 
 
 def load_atlas_objects_to_purview(purview_client: PurviewClient, purview_objects: list[AtlasProcess]):
@@ -173,13 +178,17 @@ def load_atlas_objects_to_purview(purview_client: PurviewClient, purview_objects
         purview_client (PurviewClient): purview client for request autentication
         purview_objects (list[AtlasProcess]): list of atlas process to send to Purview
     """
-    logging.debug(f"Sending {len(purview_objects)} Atlas Process to Purview")
-    try:
-        purview_client.upload_entities(batch=purview_objects, batch_size=len(purview_objects))
-    except Exception:
-        raise
+    logger = logging.getLogger("etl_lineage_snowflake_purview")
+    logger.debug(f"Sending {len(purview_objects)} Atlas Process to Purview")
+    if len(purview_objects) == 0:
+        logger.info("No new entity to send at Purview")
     else:
-        logging.info(f"Sucessfully sent {len(purview_objects)} Atlas Process to Purview")
+        try:
+            purview_client.upload_entities(batch=purview_objects, batch_size=len(purview_objects))
+        except Exception:
+            raise
+        else:
+            logger.info(f"Sucessfully sent {len(purview_objects)} Atlas Process to Purview")
 
 
 def upload_missing_type_purview(purview_client: PurviewClient) -> None:
@@ -190,6 +199,7 @@ def upload_missing_type_purview(purview_client: PurviewClient) -> None:
     Args:
         purview_client (PurviewClient): Purview client to perform upload request
     """
+    logger = logging.getLogger("etl_lineage_snowflake_purview")
     try:
         procType = EntityTypeDef(
             "SnowflakeStageLoadProcess",
@@ -200,7 +210,7 @@ def upload_missing_type_purview(purview_client: PurviewClient) -> None:
     except Exception:
         raise
     else:
-        logging.info("New Purview type SnowflakeStageLoadProcess created")
+        logger.info("New Purview type SnowflakeStageLoadProcess created")
 
 
 
@@ -208,6 +218,9 @@ def etl() -> None:
     """
     etl main process
     """
+    logging.basicConfig(level=logging.ERROR)
+    logger = logging.getLogger("etl_lineage_snowflake_purview")
+    logger.setLevel(logging.DEBUG)
     purview_settings = get_purview_settings()
     snowflake_settings = get_snowflake_settings()    
     purview_client = create_purview_client(purview_settings)
